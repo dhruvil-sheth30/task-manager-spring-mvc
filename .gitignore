@@ -26,3 +26,4 @@ replay_pid*
 
 /data/
 *.db
+.env
