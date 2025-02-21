@@ -3,6 +3,8 @@ name: Deploy to EC2
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'backend/**'
 
 jobs:
   deploy:
@@ -29,6 +31,8 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         source: "backend/target/*.jar,backend/deploy.sh"
         target: "~/app"
+        port: 22
+        key_type: rsa
 
     - name: Execute deploy script
       uses: appleboy/ssh-action@master
@@ -36,6 +40,8 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ec2-user
         key: ${{ secrets.EC2_SSH_KEY }}
+        port: 22
+        key_type: rsa
         script: |
           chmod +x ~/app/deploy.sh
           ~/app/deploy.sh
