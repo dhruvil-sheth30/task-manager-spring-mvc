@@ -23,23 +23,30 @@ jobs:
       working-directory: ./backend
       run: mvn clean package
 
-    - name: Create SSH key
-      run: |
-        mkdir -p ~/.ssh/
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-        chmod 600 ~/.ssh/deploy_key
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
     - name: Debug SSH Connection
       run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
         echo "Testing SSH connection..."
-        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} 'echo "SSH connection successful"'
+        ssh -v -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} 'echo "SSH connection successful"'
 
     - name: Copy files to EC2
-      run: |
-        scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no backend/target/*.jar ubuntu@${{ secrets.EC2_HOST }}:~/app/
-        scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no backend/deploy.sh ubuntu@${{ secrets.EC2_HOST }}:~/app/
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ubuntu
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "backend/target/*.jar,backend/deploy.sh"
+        target: "~/app"
+        strip_components: 1
 
     - name: Execute deploy script
-      run: |
-        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} 'chmod +x ~/app/deploy.sh && ~/app/deploy.sh'
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ubuntu
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          chmod +x ~/app/deploy.sh
+          ~/app/deploy.sh
