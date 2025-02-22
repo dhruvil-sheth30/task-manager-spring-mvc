@@ -23,25 +23,28 @@ jobs:
       working-directory: ./backend
       run: mvn clean package
 
+    - name: Create SSH key
+      run: |
+        mkdir -p ~/.ssh/
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
     - name: Copy files to EC2
       uses: appleboy/scp-action@master
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ec2-user
-        key: ${{ secrets.EC2_SSH_KEY }}
+        key_path: ~/.ssh/deploy_key
         source: "backend/target/*.jar,backend/deploy.sh"
         target: "~/app"
-        port: 22
-        key_type: rsa
 
     - name: Execute deploy script
       uses: appleboy/ssh-action@master
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ec2-user
-        key: ${{ secrets.EC2_SSH_KEY }}
-        port: 22
-        key_type: rsa
+        key_path: ~/.ssh/deploy_key
         script: |
           chmod +x ~/app/deploy.sh
           ~/app/deploy.sh
