@@ -23,30 +23,51 @@ jobs:
       working-directory: ./backend
       run: mvn clean package
 
-    - name: Debug SSH Connection
+    - name: Deploy to EC2
+      env:
+        PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+        HOSTNAME: ${{ secrets.EC2_HOST }}
+        DB_URL: ${{ secrets.DB_URL }}
+        DB_USERNAME: ${{ secrets.DB_USERNAME }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-        chmod 600 ~/.ssh/deploy_key
+        echo "$PRIVATE_KEY" > private_key.pem
+        chmod 600 private_key.pem
+        
+        # Debug SSH connection
         echo "Testing SSH connection..."
-        ssh -v -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} 'echo "SSH connection successful"'
-
-    - name: Copy files to EC2
-      uses: appleboy/scp-action@master
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ubuntu
-        key: ${{ secrets.EC2_SSH_KEY }}
-        source: "backend/target/*.jar,backend/deploy.sh"
-        target: "~/app"
-        strip_components: 1
-
-    - name: Execute deploy script
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ubuntu
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          chmod +x ~/app/deploy.sh
-          ~/app/deploy.sh
+        ssh -i private_key.pem -o StrictHostKeyChecking=no ubuntu@${HOSTNAME} 'echo "Connected successfully"'
+        
+        # Create app directory if it doesn't exist
+        ssh -i private_key.pem ubuntu@${HOSTNAME} 'mkdir -p ~/app'
+        
+        # Copy files
+        scp -i private_key.pem backend/target/*.jar ubuntu@${HOSTNAME}:~/app/
+        
+        # Create deploy script with environment variables
+        cat > deploy.sh << 'EOL'
+        #!/bin/bash
+        # Stop existing application if running
+        pid=$(pgrep -f task-manager)
+        if [ -n "$pid" ]; then
+            echo "Stopping existing application..."
+            kill $pid
+        fi
+        sleep 5
+        
+        echo "Starting application..."
+        nohup java -jar \
+            -DDB_URL="${DB_URL}" \
+            -DDB_USERNAME="${DB_USERNAME}" \
+            -DDB_PASSWORD="${DB_PASSWORD}" \
+            ~/app/task-manager-0.0.1-SNAPSHOT.jar > ~/app/app.log 2>&1 &
+        
+        echo "Application started. Check app.log for details."
+        EOL
+        
+        # Copy and execute deploy script
+        scp -i private_key.pem deploy.sh ubuntu@${HOSTNAME}:~/app/
+        ssh -i private_key.pem ubuntu@${HOSTNAME} "export DB_URL='${DB_URL}' DB_USERNAME='${DB_USERNAME}' DB_PASSWORD='${DB_PASSWORD}' && chmod +x ~/app/deploy.sh && ~/app/deploy.sh"
+        
+        # Cleanup
+        rm -f private_key.pem deploy.sh
